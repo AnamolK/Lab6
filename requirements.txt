@@ -1,0 +1,6 @@
+kuzu==0.8.2
+flask
+matplotlib
+networkx
+ipywidgets
+jupyter
