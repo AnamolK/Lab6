@@ -10,7 +10,9 @@ const Visualization = (function () {
         showRelationships: true,
         nodeSize: "small",
     };
-
+    const nodeColorScale = d3.scaleOrdinal(d3.schemeObservable10);
+    const linkColorScale = d3.scaleOrdinal(d3.schemeAccent);
+    
     // Visualization state
     let svg = null;
     let graphData = null;
@@ -72,6 +74,55 @@ const Visualization = (function () {
         }
     }
 
+    function getLinkTypes(links) {
+        return [...new Set(links.map((d) => d.type).filter(Boolean))];
+    }
+
+    function getNodeLabels(nodes) {
+        return [...new Set(nodes.map((d) => d.labels?.[0]).filter(Boolean))];
+    }
+
+    function appendLegendSection(legend, titleText, items, colorScale) {
+        const title = document.createElement("div");
+        title.className = "legend-title";
+        title.textContent = titleText;
+        legend.appendChild(title);
+
+        items.forEach((itemLabel) => {
+            const item = document.createElement("div");
+            item.className = "legend-item";
+            item.innerHTML = `<span class="legend-color" style="background:${colorScale(itemLabel)}"></span><span></span>`;
+            item.lastChild.textContent = itemLabel;
+            legend.appendChild(item);
+        });
+    }
+
+    function syncLegend(nodeLabels, linkTypes) {
+        const container = document.querySelector("#visualization");
+        if (!container) return;
+
+        container.querySelector(".graph-legend")?.remove();
+        if (
+            (!visualOptions.showLabels || !nodeLabels.length) &&
+            (!visualOptions.showRelationships || !linkTypes.length)
+        ) {
+            return;
+        }
+
+        const legend = document.createElement("div");
+        legend.className = "graph-legend";
+
+        if (visualOptions.showLabels && nodeLabels.length) {
+            appendLegendSection(legend, "Nodes", nodeLabels, nodeColorScale);
+        }
+
+        if (visualOptions.showRelationships && linkTypes.length) {
+            appendLegendSection(legend, "Links", linkTypes, linkColorScale);
+        }
+
+        container.appendChild(legend);
+    }
+
     // Render graph visualization
     function render(data, options = {}) {
         console.log("Visualization render called");
@@ -99,6 +150,11 @@ const Visualization = (function () {
             // Create SVG groups
             const g = svg.append("g");
             const nodeRadius = nodeRadiusScale(visualOptions.nodeSize);
+            const nodeLabels = getNodeLabels(data.nodes);
+            const linkTypes = getLinkTypes(data.links);
+            nodeColorScale.domain(nodeLabels);
+            linkColorScale.domain(linkTypes);
+            syncLegend(nodeLabels, linkTypes);
 
             // Create force simulation
             simulation = d3
@@ -124,25 +180,13 @@ const Visualization = (function () {
                 .data(data.links)
                 .enter()
                 .append("line")
-                .attr("stroke", "#999")
-                .attr("stroke-opacity", 0.6)
-                .attr("stroke-width", 1);
-
-            let linkLabels = null;
-            if (visualOptions.showRelationships) {
-                linkLabels = g
-                    .append("g")
-                    .attr("class", "link-labels")
-                    .selectAll("text")
-                    .data(data.links)
-                    .enter()
-                    .append("text")
-                    .text((d) => d.type || "")
-                    .attr("font-size", 10)
-                    .attr("fill", "#555")
-                    .attr("text-anchor", "middle")
-                    .attr("pointer-events", "none");
-            }
+                .attr("stroke", (d) =>
+                    visualOptions.showRelationships
+                        ? linkColorScale(d.type || "Other")
+                        : "#94a3b8",
+                )
+                .attr("stroke-opacity", 0.8)
+                .attr("stroke-width", 2);
 
             console.log("Links created:", link.size());
             // Create nodes - all grey
@@ -154,24 +198,12 @@ const Visualization = (function () {
                 .enter()
                 .append("circle")
                 .attr("r", nodeRadius)
-                .attr("fill", "#888") // All nodes are grey
+                .attr("fill", (d) =>
+                    visualOptions.showLabels
+                        ? nodeColorScale(d.labels?.[0] || "Other")
+                        : "#888",
+                )
                 .call(drag(simulation));
-            let nodeLabels = null;
-            if (visualOptions.showLabels) {
-                nodeLabels = g
-                    .append("g")
-                    .attr("class", "node-labels")
-                    .selectAll("text")
-                    .data(data.nodes)
-                    .enter()
-                    .append("text")
-                    .text((d) => d.labels[0] || "")
-                    .attr("font-size", 12)
-                    .attr("dx", nodeRadius + 3)
-                    .attr("dy", 4)
-                    .attr("fill", "#333")
-                    .attr("pointer-events", "none");
-            }
 
             // Update positions on tick
             simulation.on("tick", () => {
@@ -181,17 +213,6 @@ const Visualization = (function () {
                     .attr("y2", (d) => d.target.y || 0);
 
                 node.attr("cx", (d) => d.x || 0).attr("cy", (d) => d.y || 0);
-                if (nodeLabels) {
-                    nodeLabels
-                        .attr("x", (d) => d.x || 0)
-                        .attr("y", (d) => d.y || 0);
-                }
-
-                if (linkLabels) {
-                    linkLabels
-                        .attr("x", (d) => ((d.source.x || 0) + (d.target.x || 0)) / 2)
-                        .attr("y", (d) => ((d.source.y || 0) + (d.target.y || 0)) / 2);
-                }
             });
 
             console.log("Visualization rendered successfully");
@@ -231,6 +252,7 @@ const Visualization = (function () {
         if (svg) {
             svg.selectAll("*").remove();
         }
+        document.querySelector("#visualization .graph-legend")?.remove();
 
         if (simulation) {
             simulation.stop();
